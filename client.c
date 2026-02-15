@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 
 /* To be written. Do not submit this file to canvas */
 
@@ -6,12 +7,13 @@ extern char *processRequest (char *);
 
 int main (int argc, char **argv) {
 
-    char *request, *response;
+    char *request;
 
     request = "A 147.188.192.43 22";
-    response = processRequest(request);
+    processRequest(request);
 
-    printf(response);
+    // printf("%s\n", response);
+    // free(response);
 
     return 0;
 }
