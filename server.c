@@ -5,5 +5,5 @@
 extern char *processRequest (char *);
 
 char *processRequest (char *request) {
-    return NULL; /* needs changing */
+    return "hello!"
 }
