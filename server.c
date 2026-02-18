@@ -86,14 +86,11 @@ char *processRequest (char *request) {
 
     // with "F" i want to delete all previous commands
     if (processFCommand(commands[0]) == true) {
-        //currentCommands = "";
+        // okay changed it to a free so theres no memory leaks
+        free(currentCommands);
         capacity = 50;
-
         currentCommands = calloc(capacity, sizeof(char));
-
-        strcat(currentCommands, request);
-        strcat(currentCommands, "\n");
-        currentLength = requestLen;
+        currentLength = 0;
 
         printf("All commands deleted. \n");
     }
