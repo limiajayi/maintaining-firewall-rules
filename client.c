@@ -10,14 +10,20 @@ int main (int argc, char **argv) {
     
 
     char *req0 = "A 147.188.192.43 22";
-    char *req1 = "C 147.188.192.41 443";
-    char *req2 = "R";
-    char *req3 = "F";
+    char *req1 = "A 147.188.192.41 443";
+    char *req2 = "A 147.188.192.41 441";
+    char *req3 = "R";
+    char *req4 = "F";
+
     processRequest(req0);
     processRequest(req1);
     processRequest(req2);
-    processRequest(req3);
+
+    processRequest(req4);
+
+    processRequest(req1);
     processRequest(req2);
+    processRequest(req3);
 
     // printf("%s\n", response);
     // free(response);

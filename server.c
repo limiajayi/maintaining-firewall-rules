@@ -7,6 +7,17 @@
 
 extern char *processRequest (char *);
 
+// i need a function called process rule
+// which turns a rule: <IP Address>-<IP Address> <Port>-<Port> into "IP-In-Base-10-range Port Range"
+
+char* processIPAddress(char* IPAddress) {
+    char *containsDash = strstr(IPAddress, "-");
+
+    if (containsDash) printf("what\n");
+
+    return "whatever man";
+}
+
 bool processPortNums(int num) {
     return (num >= 0) && (num <= 65535);
 }
@@ -30,25 +41,12 @@ char** processCommand(char *address) {
         length++;
     }
     
+    //newCommand[length] = NULL;
     free(addressCopy);
     return newCommand;
 }
 
-bool processRCommand(char *letter) {
-    return (strcmp("R", letter) == 0);
-}
-
-bool processFCommand (char *letter) {
-    return (strcmp("F", letter) == 0);
-}
-
-char *processRequest (char *request) {
-
-    // from what i understand about static variables, they are preserved during the entire life time of the program
-    // so any changes to it persist after concurrent function calls
-    // so setting up forthe "R" command
-    // we make capacity also static so it persists across function calls
-
+char* processRCommand(char *request) {
     static int capacity = 50;
     static char *currentCommands = NULL;
     static int currentLength = 0;
@@ -78,30 +76,89 @@ char *processRequest (char *request) {
     strcat(currentCommands, "\n");
     currentLength += requestLen;
 
+    return currentCommands;
+}
+
+// global variables for commands A, F, D, L to access
+static int rulesCapacity = 50;
+static char **rules = NULL;
+static int allRulesLength = 0;
+
+char* processACommand (char *rule) {
+    if (rules == NULL) {
+        rules = malloc(rulesCapacity * sizeof(char *));
+    }
+
+    int ruleLength = strlen(rule);
+
+    if (ruleLength + allRulesLength >= rulesCapacity) {
+        while (rulesCapacity <= ruleLength + allRulesLength) {
+            rulesCapacity *= 2;
+        }
+
+        char **temp = realloc(rules, rulesCapacity);
+        if (temp != NULL) rules = temp;
+    }
+
+    rules[allRulesLength] = strdup(rule);
+    allRulesLength += 1;
+
+    // printf("\nNew rule added\n===============\n");
+    // for (int i = 0; i < allRulesLength; i++) {
+    //     printf("%s\n", rules[i]);
+    // }
+    
+    return strdup("Rule added");
+}
+
+char* processFCommand() {
+    free(rules);
+
+    rulesCapacity = 50;
+    rules = calloc(rulesCapacity, sizeof(char *)); // i want rules to be NULL
+    allRulesLength = 0;
+
+    return strdup("All rules deleted");
+}
+
+char *processRequest (char *request) {
+    char *previousCommands = processRCommand(request);
     char **commands = processCommand(request);
+
     // with "R" i want to call all previous commands
-    if (processRCommand(commands[0]) == true) {
-        printf("Commands: \n%s", currentCommands);
+    if (strcmp("R", commands[0]) == 0) {
+        printf("\nPrevious Commands:\n%s", previousCommands);
+
+        return previousCommands;
     }
 
-    // with "F" i want to delete all previous commands
-    if (processFCommand(commands[0]) == true) {
-        // okay changed it to a free so theres no memory leaks
-        free(currentCommands);
-        capacity = 50;
-        currentCommands = calloc(capacity, sizeof(char));
-        currentLength = 0;
+    // with "A" I want to add all rules to an array of strings
+    if (strcmp("A", commands[0]) == 0) {
+        char *newRule = malloc(strlen(commands[1]) + strlen(commands[2]) + 2);
+        strcpy(newRule, commands[1]);
+        strcat(newRule, " ");
+        strcat(newRule, commands[2]);
 
-        printf("All commands deleted. \n");
+        char *response = processACommand(newRule);
+
+        free(newRule);
+        return response;
+    }
+
+    // with "F" i want to delete all rules
+    if (strcmp("F", commands[0]) == 0) {
+        // printf("\nClearing all rules...\n");
+        char *response = processFCommand();
+
+        return response;
     }
 
 
-    // freeing every part of command
+    // freeing every part of a command
     for (int i = 0; commands[i] != NULL; i++) {
         free(commands[i]);
     }
-    free(commands);
-    
+    free(commands);   
 
     return NULL;
 
