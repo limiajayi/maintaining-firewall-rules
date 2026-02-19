@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 /* To be written. This file needs to be sumitted to canvas */
 
@@ -10,12 +11,75 @@ extern char *processRequest (char *);
 // i need a function called process rule
 // which turns a rule: <IP Address>-<IP Address> <Port>-<Port> into "IP-In-Base-10-range Port Range"
 
-char* processIPAddress(char* IPAddress) {
-    char *containsDash = strstr(IPAddress, "-");
+struct Rule {
+    long startIPAddress;
+    long endIPAddress;
+    int startPort;
+    int endPort;
+};
 
-    if (containsDash) printf("what\n");
+int* arrOfPorts(char *port1, char *port2) {
+    int *ports = malloc(2 * sizeof(int));
+    ports[0] = atoi(port1);
+    ports[1] = atoi(port2);
 
-    return "whatever man";
+    return ports;
+}
+
+// breaks up <IPAddress>-<IPAddress> and <port>-<port>
+char** breakUp(char *address) {
+    char **newArr = malloc(50 * sizeof(char *));
+    int length = 0;
+    char *copy = strdup(address);
+    char *token = strtok(copy, "-");
+
+    while (token != NULL) {
+        newArr[length] = strdup(token);
+
+        token = strtok(NULL, "-");
+        length += 1;
+    }
+    
+    newArr[length] = NULL;
+    free(copy);
+    return newArr;
+}
+
+long* turnIPIntoInt(char *IPaddress) {
+    long *num = malloc(sizeof(long));
+    *num = 0;
+
+    char *copy = strdup(IPaddress);
+    char *token = strtok(copy, ".");
+    int length = 3;
+
+    int multipliers[] = {1, 256, 65536, 16777216};
+
+
+    while (token != NULL && length >= 0) {
+        printf("\n256^%d: %d\n", length, multipliers[length]);
+        *num += (long)atoi(token) * (long)multipliers[length];
+
+        token = strtok(NULL, ".");
+        length -= 1;
+    }
+    printf("Final number: %ld\n", *num);
+
+    free(copy);
+    return num;
+}
+
+long** arrOfIPs(long *IP1, long *IP2) {
+    long **IPAddresses = malloc(2 * sizeof(long));
+    IPAddresses[0] = IP1;
+    IPAddresses[1] = IP2;
+
+    printf("here are the IPs");
+
+    for (int i = 0; i < 2; i++) {
+        printf("\n %ld \n", *IPAddresses[i]);
+    }
+    return IPAddresses;
 }
 
 bool processPortNums(int num) {
@@ -41,7 +105,7 @@ char** processCommand(char *address) {
         length++;
     }
     
-    //newCommand[length] = NULL;
+    newCommand[length] = NULL;
     free(addressCopy);
     return newCommand;
 }
@@ -103,6 +167,7 @@ char* processACommand (char *rule) {
     rules[allRulesLength] = strdup(rule);
     allRulesLength += 1;
 
+    //RESULTS
     // printf("\nNew rule added\n===============\n");
     // for (int i = 0; i < allRulesLength; i++) {
     //     printf("%s\n", rules[i]);
@@ -122,12 +187,18 @@ char* processFCommand() {
 }
 
 char *processRequest (char *request) {
+
+    // arrOfIPs(turnIPIntoInt("10.10.10.10"), turnIPIntoInt("255.255.255.255"));
+    //printf("%s\n", breakUp("10.10.10.10-255.255.255.255")[0]);
+
+
     char *previousCommands = processRCommand(request);
     char **commands = processCommand(request);
 
     // with "R" i want to call all previous commands
     if (strcmp("R", commands[0]) == 0) {
-        printf("\nPrevious Commands:\n%s", previousCommands);
+        //RESULTS
+        // printf("\nPrevious Commands:\n%s", previousCommands);
 
         return previousCommands;
     }
@@ -147,6 +218,8 @@ char *processRequest (char *request) {
 
     // with "F" i want to delete all rules
     if (strcmp("F", commands[0]) == 0) {
+
+        //RESULTS
         // printf("\nClearing all rules...\n");
         char *response = processFCommand();
 
