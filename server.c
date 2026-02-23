@@ -18,6 +18,15 @@ struct Rule {
     int endPort;
 };
 
+void freeCommands(char **commands) {
+    if (commands == NULL) return;
+    
+    for (int i = 0; commands[i] != NULL; i++) {
+        free(commands[i]);
+    }
+    free(commands);
+}
+
 int* arrOfPorts(char *port1, char *port2) {
     int *ports = malloc(2 * sizeof(int));
     ports[0] = atoi(port1);
@@ -57,13 +66,12 @@ long* turnIPIntoInt(char *IPaddress) {
 
 
     while (token != NULL && length >= 0) {
-        printf("\n256^%d: %d\n", length, multipliers[length]);
+
         *num += (long)atoi(token) * (long)multipliers[length];
 
         token = strtok(NULL, ".");
         length -= 1;
     }
-    printf("Final number: %ld\n", *num);
 
     free(copy);
     return num;
@@ -82,16 +90,56 @@ long** arrOfIPs(long *IP1, long *IP2) {
     return IPAddresses;
 }
 
-bool processPortNums(int num) {
-    return (num >= 0) && (num <= 65535);
+// takes in something like "10.10.10.10-255.255.255.255" "22-33"
+
+struct Rule* turnIPandPortToRule(char *IP, char *port) {
+    struct Rule *r = calloc(1, sizeof(struct Rule));
+    char **IPs = breakUp(IP);
+    char **Ports = breakUp(port);
+
+    if (IPs[0]) {
+        long *startIP = turnIPIntoInt(IPs[0]);
+        r->startIPAddress = *startIP;
+        free(startIP);
+        
+        if (IPs[1]) {
+            long *endIP = turnIPIntoInt(IPs[1]);
+            r->endIPAddress = *endIP;
+            free(endIP);
+        } else {
+            r->endIPAddress = r->startIPAddress;
+        }
+    }
+
+    if (Ports[0]) {
+        r->startPort = atoi(Ports[0]);
+        if (Ports[1]) {
+            r->endPort = atoi(Ports[1]);
+        } else {
+            r->endPort = r->startPort;
+        }
+    }
+    
+    freeCommands(IPs);
+    freeCommands(Ports);
+
+    return r;
+}
+
+bool isIPInRange(long ip, long startIP, long endIP) {
+    return (ip >= startIP) && (ip <= endIP);
+}
+
+bool isPortInRange(int port, int startPort, int endPort) {
+    return (port >= startPort) && (port <= endPort);
 }
 
 char** processCommand(char *address) {
     // first i want to split by spaces, so split into
     // [command] [IP] [port]
 
-    //array of strings where the new
-    char **newCommand = malloc(50 * sizeof(char *));
+    //array of strings where the new command will be
+    char **newCommand = malloc(60 * sizeof(char *));
     int length = 0;
 
     char *addressCopy = strdup(address);
@@ -117,6 +165,7 @@ char* processRCommand(char *request) {
 
     if (currentCommands == NULL) {
         currentCommands = malloc(capacity * sizeof(char));
+        currentCommands[0] = '\0';
         currentLength = 0;
     }
 
@@ -176,8 +225,38 @@ char* processACommand (char *rule) {
     return strdup("Rule added");
 }
 
+char* processCCommand(char *IP, char *port) {
+    struct Rule *r1 = turnIPandPortToRule(IP, port);
+    char *result = NULL;
+    
+    int length = 0;
+    
+    while (rules[length] != NULL) {
+        char **currentRule = processCommand(rules[length]);
+        struct Rule *r2 = turnIPandPortToRule(currentRule[0], currentRule[1]);
+        
+        if (isIPInRange(r1->startIPAddress, r2->startIPAddress, r2->endIPAddress) && 
+            isPortInRange(r1->startPort, r2->startPort, r2->endPort)) {
+            result = strdup("Connection accepted");
+        }
+        
+        freeCommands(currentRule);
+        free(r2);
+        
+        if (result != NULL) break;
+        length += 1;
+    }
+    
+    if (result == NULL) {
+        result = strdup("Connection rejected");
+    }
+    
+    free(r1);
+    return result;
+}
+
 char* processFCommand() {
-    free(rules);
+    freeCommands(rules);
 
     rulesCapacity = 50;
     rules = calloc(rulesCapacity, sizeof(char *)); // i want rules to be NULL
@@ -186,11 +265,37 @@ char* processFCommand() {
     return strdup("All rules deleted");
 }
 
+char* processDCommand(char *unwantedRule) {
+    char *result = NULL;
+
+    int length = 0;
+    while (rules[length] != NULL) {
+
+        if (strcmp(rules[length], unwantedRule) == 0) {
+            free(rules[length]);
+
+            // shift remaining rules down
+            for (int i = length; rules[i + 1] != NULL; i++) {
+                rules[i] = rules[i + 1];
+            }
+
+            // mark end of array after shifting all items down
+            rules[length + 1] = NULL;
+
+            result = strdup("Rule deleted");
+            allRulesLength -= 1;
+            break; // no need to loop through anymore
+        }
+
+        length += 1;
+    }
+
+    if (result == NULL) result = strdup("Rule not found");
+    
+    return result;
+}
+
 char *processRequest (char *request) {
-
-    // arrOfIPs(turnIPIntoInt("10.10.10.10"), turnIPIntoInt("255.255.255.255"));
-    //printf("%s\n", breakUp("10.10.10.10-255.255.255.255")[0]);
-
 
     char *previousCommands = processRCommand(request);
     char **commands = processCommand(request);
@@ -198,13 +303,19 @@ char *processRequest (char *request) {
     // with "R" i want to call all previous commands
     if (strcmp("R", commands[0]) == 0) {
         //RESULTS
-        // printf("\nPrevious Commands:\n%s", previousCommands);
+        //printf("\nPrevious Commands:\n%s", previousCommands);
 
+        freeCommands(commands);
         return previousCommands;
-    }
+    } else if (strcmp("A", commands[0]) == 0) {
 
-    // with "A" I want to add all rules to an array of strings
-    if (strcmp("A", commands[0]) == 0) {
+        // with "A" I want to add all rules to an array of strings
+
+        if (commands[1] == NULL) {
+            freeCommands(commands);
+            return strdup("Illegal response");
+        }
+
         char *newRule = malloc(strlen(commands[1]) + strlen(commands[2]) + 2);
         strcpy(newRule, commands[1]);
         strcat(newRule, " ");
@@ -213,25 +324,51 @@ char *processRequest (char *request) {
         char *response = processACommand(newRule);
 
         free(newRule);
+        freeCommands(commands);
         return response;
-    }
+    } else if (strcmp("C", commands[0]) == 0) {
 
-    // with "F" i want to delete all rules
-    if (strcmp("F", commands[0]) == 0) {
+        if (commands[1] == NULL) {
+            freeCommands(commands);
+            return strdup("Illegal response");
+        }
+
+        char *response = processCCommand(commands[1], commands[2]);
+        printf("%s\n", response);
+        freeCommands(commands);
+        return response;
+    } else if (strcmp("F", commands[0]) == 0) {
+
+        // with "F" i want to delete all rules
 
         //RESULTS
-        // printf("\nClearing all rules...\n");
+        //printf("\nClearing all rules...\n");
         char *response = processFCommand();
 
+        freeCommands(commands);
         return response;
-    }
+    } else if (strcmp("D", commands[0]) == 0) {
 
+        if (commands[1] == NULL) {
+            freeCommands(commands);
+            return strdup("Illegal response");
+        }
 
-    // freeing every part of a command
-    for (int i = 0; commands[i] != NULL; i++) {
-        free(commands[i]);
+        char *newRule = malloc(strlen(commands[1]) + strlen(commands[2]) + 2);
+        strcpy(newRule, commands[1]);
+        strcat(newRule, " ");
+        strcat(newRule, commands[2]);
+
+        char *response = processDCommand(newRule);
+
+        free(newRule);
+        freeCommands(commands);
+        printf("%s\n", response);
+        return response;
+    } else {
+        freeCommands(commands);
+        return strdup("Illegal request");
     }
-    free(commands);   
 
     return NULL;
 
