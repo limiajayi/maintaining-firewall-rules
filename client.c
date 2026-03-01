@@ -24,17 +24,23 @@ int main (int argc, char **argv) {
     char *req11 = "D 147.188.192.41 441";
     processRequest(req11);
 
+    char *req14 = "D 147.655.192.41 441";
+    processRequest(req14);
+
+    char *req15 = "A 147.655.192.41 441";
+    processRequest(req15);
+
     char *req12 = "C 147.188.192.41 441";
     processRequest(req12);
 
-    char *req4 = "F";
-    processRequest(req4);
+    // char *req4 = "F";
+    // processRequest(req4);
 
-    char *req3 = "R";
-    processRequest(req3);
+    // char *req3 = "R";
+    // processRequest(req3);
 
-    char *req9 = "A";
-    processRequest(req9);
+    char *req13 = "L";
+    processRequest(req13);
 
     
 
