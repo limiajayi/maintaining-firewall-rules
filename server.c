@@ -355,7 +355,7 @@ char* processCCommand(char *IP, char *port) {
             isPortInRange(r1->startPort, rules[length]->startPort, rules[length]->endPort)) {
             result = strdup("Connection accepted");
 
-            // initialising queries array
+            // initialise queries array if it's empty
             if (rules[length]->queries == NULL) {
                 rules[length]->queryCapacity = 10;
                 rules[length]->queries = malloc(rules[length]->queryCapacity * sizeof(char *));
@@ -509,9 +509,11 @@ char *processRequest (char *request) {
         freeCommands(commands);
         pthread_mutex_unlock(&mutex);
 
-        printf("%s", previousCommands);
+        //printf("%s", previousCommands);
 
-        return previousCommands;
+        char *copyOfCommands = strdup(previousCommands);
+
+        return copyOfCommands;
 
     } else if (strcmp("A", commands[0]) == 0) {
         // with "A" I want to add all rules to an array of strings

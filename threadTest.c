@@ -18,7 +18,7 @@ void *clientThread(void *arg) {
 }
 
 int main() {
-    pthread_t threads[5];  // Create 5 threads
+    pthread_t threads[5];  // Create 7 threads
     
     // Different requests each thread will make
     char *requests[] = {
@@ -27,6 +27,8 @@ int main() {
         "A 10.0.0.1 80",
         "C 147.188.192.43 22",
         "C 10.0.0.1 80",
+        "A 147.188.192.48 22",
+        "D 147.188.192.48 22",
         "L"
     };
     
