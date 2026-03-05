@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <pthread.h>
 
 /* To be written. This file needs to be sumitted to canvas */
 
@@ -16,7 +17,20 @@ struct Rule {
     long endIPAddress;
     int startPort;
     int endPort;
+
+    char *ruleString;
+
+    char **queries;
+    int queryCount;
+    int queryCapacity;
 };
+
+// global variables for commands A, F, D, L to access
+static int rulesCapacity = 50;
+static int allRulesLength = 0;
+static struct Rule **rules = NULL;
+
+static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
 bool validIP(int IP) {
     return (IP >= 0) && (IP <= 255);
@@ -55,14 +69,13 @@ int* breakUpDots(char *address) {
     char *token = strtok(copy, ".");
 
     while (token != NULL) {
-        newArr[length] = atoi(strdup(token));
+        newArr[length] = atoi(token);
 
         token = strtok(NULL, ".");
         length += 1;
     }
     
     free(copy);
-    free(token);
     return newArr;
 }
 
@@ -86,6 +99,9 @@ char** breakUp(char *address) {
     return newArr;
 }
 
+//This function turns IP Addresses into a number of type long
+//for example "147.188.192.41" becomes 2478620713
+// enables IP Addresses to be compared
 long* turnIPIntoInt(char *IPaddress) {
     long *num = malloc(sizeof(long));
     *num = 0;
@@ -94,12 +110,12 @@ long* turnIPIntoInt(char *IPaddress) {
     char *token = strtok(copy, ".");
     int length = 3;
 
-    int multipliers[] = {1, 256, 65536, 16777216};
+    long multipliers[] = {1, 256, 65536, 16777216};
 
 
     while (token != NULL && length >= 0) {
 
-        *num += (long)atoi(token) * (long)multipliers[length];
+        *num += (long)atoi(token) * multipliers[length];
 
         token = strtok(NULL, ".");
         length -= 1;
@@ -243,10 +259,32 @@ bool checkValidRule(char *rule) {
     return verdictIP && verdictPort;
 }
 
+char* concatIPAndPort(char *IP, char *Port) {
+    char *result = malloc(strlen(IP) + strlen(Port) + 2);
+    strcpy(result, IP);
+    strcat(result, " ");
+    strcat(result, Port);
+
+    return result;
+}
+
 char* processRCommand(char *request) {
     static int capacity = 50;
     static char *currentCommands = NULL;
     static int currentLength = 0;
+
+    // for the F command
+    // so there's nothing on heap after F is called
+    if (request == NULL) {
+        if (currentCommands != NULL) {
+            free(currentCommands);
+            currentCommands = NULL;
+        }
+
+        currentLength = 0;
+        capacity = 0;
+        return NULL;
+    }
 
     if (currentCommands == NULL) {
         currentCommands = malloc(capacity * sizeof(char));
@@ -277,28 +315,29 @@ char* processRCommand(char *request) {
     return currentCommands;
 }
 
-// global variables for commands A, F, D, L to access
-static int rulesCapacity = 50;
-static char **rules = NULL;
-static int allRulesLength = 0;
+char* processACommand (char *rule, char *IP, char *Port) {
 
-char* processACommand (char *rule) {
+    struct Rule *newRule = turnIPandPortToRule(IP, Port);
+    newRule->ruleString = strdup(rule);
+    newRule->queryCount = 0;
+    newRule->queryCapacity = 10;
+
     if (rules == NULL) {
-        rules = malloc(rulesCapacity * sizeof(char *));
+        rules = calloc(rulesCapacity, sizeof(struct Rule *));
     }
 
-    int ruleLength = strlen(rule);
+    int ruleLength = sizeof(newRule);
 
     if (ruleLength + allRulesLength >= rulesCapacity) {
         while (rulesCapacity <= ruleLength + allRulesLength) {
             rulesCapacity *= 2;
         }
 
-        char **temp = realloc(rules, rulesCapacity);
+        struct Rule **temp = realloc(rules, rulesCapacity);
         if (temp != NULL) rules = temp;
     }
 
-    rules[allRulesLength] = strdup(rule);
+    rules[allRulesLength] = newRule;
     allRulesLength += 1;
     
     return strdup("Rule added");
@@ -311,16 +350,33 @@ char* processCCommand(char *IP, char *port) {
     int length = 0;
     
     while (rules[length] != NULL) {
-        char **currentRule = processCommand(rules[length]);
-        struct Rule *r2 = turnIPandPortToRule(currentRule[0], currentRule[1]);
         
-        if (isIPInRange(r1->startIPAddress, r2->startIPAddress, r2->endIPAddress) && 
-            isPortInRange(r1->startPort, r2->startPort, r2->endPort)) {
+        if (isIPInRange(r1->startIPAddress, rules[length]->startIPAddress, rules[length]->endIPAddress) && 
+            isPortInRange(r1->startPort, rules[length]->startPort, rules[length]->endPort)) {
             result = strdup("Connection accepted");
+
+            // initialising queries array
+            if (rules[length]->queries == NULL) {
+                rules[length]->queryCapacity = 10;
+                rules[length]->queries = malloc(rules[length]->queryCapacity * sizeof(char *));
+                rules[length]->queryCount = 0;
+            }
+
+            // check if we need to rezise the queries array
+            // before adding a query to it
+            if (rules[length]->queryCount >= rules[length]->queryCapacity) {
+                rules[length]->queryCapacity *= 2;
+                char **temp = realloc(rules[length]->queries, rules[length]->queryCapacity * sizeof(char *));
+
+                if (temp != NULL) rules[length]->queries = temp;
+            }
+
+            char *query = concatIPAndPort(IP, port);
+            rules[length]->queries[rules[length]->queryCount] = query;
+            rules[length]->queryCount += 1;
+
         }
         
-        freeCommands(currentRule);
-        free(r2);
         
         if (result != NULL) break;
         length += 1;
@@ -335,10 +391,43 @@ char* processCCommand(char *IP, char *port) {
 }
 
 char* processFCommand() {
-    freeCommands(rules);
+    // clear EVERYTHING
+    printf("Freeing %d rules\n", allRulesLength);
+
+    for (int i = 0; i < allRulesLength; i++) {
+
+        printf("Freeing %d rules\n", allRulesLength);
+
+        if (rules[i] != NULL) {
+
+            // free the rule string
+            if (rules[i]->ruleString != NULL) {
+                free(rules[i]->ruleString);
+            }
+
+            // free the queries
+            if (rules[i]->queries != NULL) {
+
+                for (int j = 0; j < rules[i]->queryCount; j++) {
+                    printf("Freeing rule %d\n", i);
+                    free(rules[i]->queries[j]);
+                }
+                
+                free(rules[i]->queries);
+            }
+
+
+            free(rules[i]);
+        }
+    }
+
+    free(rules);
+    rules = NULL;
+
+    // clear commands history
+    processRCommand(NULL); 
 
     rulesCapacity = 50;
-    rules = calloc(rulesCapacity, sizeof(char *)); // i want rules to be NULL
     allRulesLength = 0;
 
     return strdup("All rules deleted");
@@ -347,67 +436,123 @@ char* processFCommand() {
 char* processDCommand(char *unwantedRule) {
     char *result = NULL;
 
-    int length = 0;
-    while (rules[length] != NULL) {
-
-        if (strcmp(rules[length], unwantedRule) == 0) {
-            free(rules[length]);
-
-            // shift remaining rules down
-            for (int i = length; rules[i + 1] != NULL; i++) {
-                rules[i] = rules[i + 1];
-            }
-
-            // mark end of array after shifting all items down
-            rules[length] = NULL;
-
-            result = strdup("Rule deleted");
-            allRulesLength -= 1;
-            break; // no need to loop through anymore
+    // loop through all rules
+    for (int i = 0; i < allRulesLength; i++) {
+        if (strcmp(rules[i]->ruleString, unwantedRule) == 0) {
+            // free queries
+            freeCommands(rules[i]->queries);
+            //free the unwanted rule
+            free(rules[i]);
         }
 
-        length += 1;
-    }
+        //shift the remaining rules down
+        for (int j = i; rules[j + 1] != NULL; j++) {
+            rules[j] = rules[j + 1];
+        }
 
+        result = strdup("Rule deleted");
+        allRulesLength -= 1;
+        break; // no need to loop through all the ruls anymore
+    }
+    
     if (result == NULL) result = strdup("Rule not found");
     
     return result;
 }
 
 char* processLCommand() {
-    char *result = malloc(5 + (allRulesLength * (strlen("Rule:") + strlen("Query:") + sizeof(char))));
+    int totalSize = 1;
+
+    for (int rLen = 0; rLen < allRulesLength; rLen++) {
+        totalSize += strlen("Rule: ") + strlen(rules[rLen]->ruleString) + strlen("\n\n");
+
+        for (int qLen = 0; qLen < rules[rLen]->queryCount; qLen++) {
+            totalSize += strlen("Query ") + strlen(rules[rLen]->queries[qLen]) + strlen("\n");
+        }
+
+    }
+
+    char *result = malloc(totalSize);
     result[0] = '\0';
 
-    int length = 0;
-
-    while (rules[length] != NULL) {
+    for (int len = 0; len < allRulesLength; len++) {
         strcat(result, "Rule: ");
-        strcat(result, "Query: ");
-        strcat(result, rules[length]);
+        strcat(result, rules[len]->ruleString);
         strcat(result, "\n");
-        length += 1;
+
+        for (int queryLen = 0; queryLen < rules[len]->queryCount; queryLen++) {
+            
+            strcat(result, "Query: ");
+            strcat(result, rules[len]->queries[queryLen]);
+            strcat(result, "\n");
+        }
+
+        strcat(result, "\n");
     }
 
     return result;
 }
 
 char *processRequest (char *request) {
+    //makes processRequest thread safe
+    pthread_mutex_lock(&mutex);
 
+    //concatenation of all previous requests
     char *previousCommands = processRCommand(request);
+
+    //the current request broken up into an array of strings
     char **commands = processCommand(request);
 
-
-    // with "R" i want to call all previous commands
     if (strcmp("R", commands[0]) == 0) {
+        // with "R" i want to call all previous commands
 
         freeCommands(commands);
-        return previousCommands;
-    } else if (strcmp("A", commands[0]) == 0) {
+        pthread_mutex_unlock(&mutex);
 
+        printf("%s", previousCommands);
+
+        return previousCommands;
+
+    } else if (strcmp("A", commands[0]) == 0) {
         // with "A" I want to add all rules to an array of strings
 
+        // checks IP and PORT parameters exist
         if (commands[1] == NULL) {
             freeCommands(commands);
+
+            pthread_mutex_unlock(&mutex);
+
+            return strdup("Illegal response");
+        }
+
+        // construct a rule from the incoming request
+        char *newRule = concatIPAndPort(commands[1], commands[2]);
+
+        //checks if the rule is valid
+        if (checkValidRule(newRule) == false) {
+            free(newRule);
+            freeCommands(commands);
+
+            pthread_mutex_unlock(&mutex);
+            return strdup("Invalid Rule");
+        }
+
+        char *response = processACommand(newRule, commands[1], commands[2]);
+        
+        free(newRule);
+        freeCommands(commands);
+
+        printf("%s\n", response);
+
+        pthread_mutex_unlock(&mutex);
+        return response;
+    } else if (strcmp("C", commands[0]) == 0) {
+
+        // checks if IP Address and Port are entered
+        if (commands[1] == NULL) {
+            freeCommands(commands);
+
+            pthread_mutex_unlock(&mutex);
             return strdup("Illegal response");
         }
 
@@ -416,33 +561,12 @@ char *processRequest (char *request) {
         strcat(newRule, " ");
         strcat(newRule, commands[2]);
 
-        if (checkValidRule(newRule) == false) {
-            printf("Invalid Rule\n");
-            free(newRule);
-            freeCommands(commands);
-            return strdup("Invalid Rule");
-        }
-
-        char *response = processACommand(newRule);
-
-        free(newRule);
-        freeCommands(commands);
-        return response;
-    } else if (strcmp("C", commands[0]) == 0) {
-
-        if (commands[1] == NULL) {
-            freeCommands(commands);
-            return strdup("Illegal response");
-        }
-
-         char *newRule = malloc(strlen(commands[1]) + strlen(commands[2]) + 2);
-        strcpy(newRule, commands[1]);
-        strcat(newRule, " ");
-        strcat(newRule, commands[2]);
-
+        //checks if IP Address and Port are valid
         if (checkValidRule(newRule) == false) {
             free(newRule);
             freeCommands(commands);
+
+            pthread_mutex_unlock(&mutex);
             return strdup("Illegal IP address or port specified");
         }
 
@@ -450,30 +574,25 @@ char *processRequest (char *request) {
         printf("%s\n", response);
         free(newRule);
         freeCommands(commands);
-        return response;
-    } else if (strcmp("F", commands[0]) == 0) {
 
-        // with "F" i want to delete all rules
-
-        //RESULTS
-        //printf("\nClearing all rules...\n");
-        char *response = processFCommand();
-
-        freeCommands(commands);
+        pthread_mutex_unlock(&mutex);
         return response;
     } else if (strcmp("L", commands[0]) == 0) {
-
+        
         char *response = processLCommand();
         freeCommands(commands);
 
-        printf("%s", response);
+        printf("%s\n", response);
 
+        pthread_mutex_unlock(&mutex);
         return response;
 
     } else if (strcmp("D", commands[0]) == 0) {
 
         if (commands[1] == NULL) {
             freeCommands(commands);
+
+            pthread_mutex_unlock(&mutex);
             return strdup("Illegal response");
         }
 
@@ -485,7 +604,9 @@ char *processRequest (char *request) {
         if (checkValidRule(newRule) == false) {
             free(newRule);
             freeCommands(commands);
-            printf("Invalid rule.\n");
+            printf("Invalid Rule\n");
+
+            pthread_mutex_unlock(&mutex);
             return strdup("Invalid rule");
         }
 
@@ -494,12 +615,28 @@ char *processRequest (char *request) {
         free(newRule);
         freeCommands(commands);
         printf("%s\n", response);
+
+        pthread_mutex_unlock(&mutex);
         return response;
-    } else {
+
+    } else if (strcmp("F", commands[0]) == 0) {
+        // with "F" i want to delete all rules
+
+        //RESULTS
+        printf("\nClearing all rules...\n");
+        char *response = processFCommand();
+
+        printf("%s\n", response);
+
         freeCommands(commands);
-        return strdup("Illegal request");
+
+        pthread_mutex_unlock(&mutex);
+        return response;
     }
 
-    return NULL;
 
+    freeCommands(commands);
+
+    pthread_mutex_unlock(&mutex);
+    return strdup("Illegal request");
 }
