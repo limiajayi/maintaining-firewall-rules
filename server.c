@@ -273,6 +273,7 @@ char* concatIPAndPort(char *IP, char *Port) {
     return result;
 }
 
+// for command: "R"
 char* processRCommand(char *request) {
     static int capacity = 50;
     static char *currentCommands = NULL;
@@ -320,6 +321,7 @@ char* processRCommand(char *request) {
     return currentCommands;
 }
 
+// for command: "A 147.188.192.43 22"
 char* processACommand (char *rule, char *IP, char *Port) {
 
     // creates a new rule struct from the incoming Rule
@@ -349,6 +351,7 @@ char* processACommand (char *rule, char *IP, char *Port) {
     return strdup("Rule added");
 }
 
+// for command: "C 147.188.192.43 22"
 char* processCCommand(char *IP, char *port) {
     struct Rule *r1 = turnIPandPortToRule(IP, port);
     char *result = NULL;
@@ -398,6 +401,7 @@ char* processCCommand(char *IP, char *port) {
     return result;
 }
 
+// for command: "F"
 char* processFCommand() {
     // clears everything
 
@@ -438,6 +442,7 @@ char* processFCommand() {
     return strdup("All rules deleted");
 }
 
+// for command: "D 147.188.192.43 22"
 char* processDCommand(char *unwantedRule) {
     char *result = NULL;
 
@@ -465,6 +470,7 @@ char* processDCommand(char *unwantedRule) {
     return result;
 }
 
+// for command: "L"
 char* processLCommand() {
     int totalSize = 1;
 
