@@ -30,16 +30,21 @@ static int rulesCapacity = 50;
 static int allRulesLength = 0;
 static struct Rule **rules = NULL;
 
+//for making all requests thread safe
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
+//checks if an IP number is between 0 and 255
 bool validIP(int IP) {
     return (IP >= 0) && (IP <= 255);
 }
 
+//checks if a port number is between 0 and 65535
 bool validPort (int port) {
     return (port >= 0) && (port <= 65535); 
 }
 
+// used to free a string array
+// which i have a lot of
 void freeCommands(char **commands) {
     if (commands == NULL) return;
     
@@ -57,11 +62,8 @@ int* arrOfPorts(char *port1, char *port2) {
     return ports;
 }
 
-
-// IP Address
-// 147.188.192.43
-// 147 188 192 43
-// check inbetween 0 - 255
+// Breaks up the dots in an IP Address
+// 147.188.192.43 turns into 147 188 192 43
 int* breakUpDots(char *address) {
     int *newArr = malloc(4 * sizeof(int));
     int length = 0;
@@ -79,8 +81,8 @@ int* breakUpDots(char *address) {
     return newArr;
 }
 
-
 // breaks up <IPAddress>-<IPAddress> and <port>-<port>
+// into <IPAddress> <IPAddress> and <port> <port>
 char** breakUp(char *address) {
     char **newArr = malloc(50 * sizeof(char *));
     int length = 0;
@@ -99,9 +101,9 @@ char** breakUp(char *address) {
     return newArr;
 }
 
-//This function turns IP Addresses into a number of type long
-//for example "147.188.192.41" becomes 2478620713
-// enables IP Addresses to be compared
+// This function turns IP Addresses into a number of type long
+// for example "147.188.192.41" becomes 2478620713
+// this enables IP Addresses to be compared
 long* turnIPIntoInt(char *IPaddress) {
     long *num = malloc(sizeof(long));
     *num = 0;
@@ -130,21 +132,19 @@ long** arrOfIPs(long *IP1, long *IP2) {
     IPAddresses[0] = IP1;
     IPAddresses[1] = IP2;
 
-    printf("here are the IPs");
-
-    for (int i = 0; i < 2; i++) {
-        printf("\n %ld \n", *IPAddresses[i]);
-    }
     return IPAddresses;
 }
 
 // takes in something like "10.10.10.10-255.255.255.255" "22-33"
-
+// turns each IP Address into a long and each port into an int
+// then saves these numbers into a Rule struct
+// then returns the Rule struct
 struct Rule* turnIPandPortToRule(char *IP, char *port) {
     struct Rule *r = calloc(1, sizeof(struct Rule));
     char **IPs = breakUp(IP);
     char **Ports = breakUp(port);
 
+    // checks if IP[0] and IP[1] exist before saving them
     if (IPs[0]) {
         long *startIP = turnIPIntoInt(IPs[0]);
         r->startIPAddress = *startIP;
@@ -159,6 +159,7 @@ struct Rule* turnIPandPortToRule(char *IP, char *port) {
         }
     }
 
+    //checks if Ports[0] and Ports[1] exist before saving them
     if (Ports[0]) {
         r->startPort = atoi(Ports[0]);
         if (Ports[1]) {
@@ -174,15 +175,20 @@ struct Rule* turnIPandPortToRule(char *IP, char *port) {
     return r;
 }
 
+// for the C rule
+// checks if the IP address is within the range of an added rule
 bool isIPInRange(long ip, long startIP, long endIP) {
     return (ip >= startIP) && (ip <= endIP);
 }
 
+// for the C rule
+// checks if the port is within the range of an added port
 bool isPortInRange(int port, int startPort, int endPort) {
     return (port >= startPort) && (port <= endPort);
 }
 
-
+// splits up each "A <IP> <Port>" or "D <IP> <Port>"
+// into string arrays eg: ["A", "<IP>", "<Port>"] or ["D", "<IP>", "<Port>"]
 char** processCommand(char *address) {
     // first i want to split by spaces, so split into
     // [command] [IP] [port]
@@ -195,7 +201,6 @@ char** processCommand(char *address) {
     char *token = strtok(addressCopy, " ");
 
     while (token != NULL) {
-        //printf("%s\n", token);
         newCommand[length] = strdup(token);
 
         token = strtok(NULL, " ");
@@ -317,6 +322,7 @@ char* processRCommand(char *request) {
 
 char* processACommand (char *rule, char *IP, char *Port) {
 
+    // creates a new rule struct from the incoming Rule
     struct Rule *newRule = turnIPandPortToRule(IP, Port);
     newRule->ruleString = strdup(rule);
     newRule->queryCount = 0;
@@ -351,6 +357,8 @@ char* processCCommand(char *IP, char *port) {
     
     while (rules[length] != NULL) {
         
+        // if the ip address and port is within range
+        // add to the list of queries for that existing rule
         if (isIPInRange(r1->startIPAddress, rules[length]->startIPAddress, rules[length]->endIPAddress) && 
             isPortInRange(r1->startPort, rules[length]->startPort, rules[length]->endPort)) {
             result = strdup("Connection accepted");
@@ -391,12 +399,9 @@ char* processCCommand(char *IP, char *port) {
 }
 
 char* processFCommand() {
-    // clear EVERYTHING
-    printf("Freeing %d rules\n", allRulesLength);
+    // clears everything
 
     for (int i = 0; i < allRulesLength; i++) {
-
-        printf("Freeing %d rules\n", allRulesLength);
 
         if (rules[i] != NULL) {
 
@@ -409,18 +414,18 @@ char* processFCommand() {
             if (rules[i]->queries != NULL) {
 
                 for (int j = 0; j < rules[i]->queryCount; j++) {
-                    printf("Freeing rule %d\n", i);
                     free(rules[i]->queries[j]);
                 }
                 
                 free(rules[i]->queries);
             }
 
-
+            // free the rule itself
             free(rules[i]);
         }
     }
 
+    //free all rules
     free(rules);
     rules = NULL;
 
@@ -463,6 +468,8 @@ char* processDCommand(char *unwantedRule) {
 char* processLCommand() {
     int totalSize = 1;
 
+    // loop through the rules
+    // and add the lengths of what needs to be printed out
     for (int rLen = 0; rLen < allRulesLength; rLen++) {
         totalSize += strlen("Rule: ") + strlen(rules[rLen]->ruleString) + strlen("\n\n");
 
@@ -475,6 +482,9 @@ char* processLCommand() {
     char *result = malloc(totalSize);
     result[0] = '\0';
 
+    // for each rule, construct return string in the form of:
+    // Rule: <rule>
+    // Query: <ip> <port>
     for (int len = 0; len < allRulesLength; len++) {
         strcat(result, "Rule: ");
         strcat(result, rules[len]->ruleString);
@@ -509,8 +519,6 @@ char *processRequest (char *request) {
         freeCommands(commands);
         pthread_mutex_unlock(&mutex);
 
-        //printf("%s", previousCommands);
-
         char *copyOfCommands = strdup(previousCommands);
 
         return copyOfCommands;
@@ -544,8 +552,6 @@ char *processRequest (char *request) {
         free(newRule);
         freeCommands(commands);
 
-        printf("%s\n", response);
-
         pthread_mutex_unlock(&mutex);
         return response;
     } else if (strcmp("C", commands[0]) == 0) {
@@ -573,7 +579,7 @@ char *processRequest (char *request) {
         }
 
         char *response = processCCommand(commands[1], commands[2]);
-        printf("%s\n", response);
+
         free(newRule);
         freeCommands(commands);
 
@@ -584,7 +590,7 @@ char *processRequest (char *request) {
         char *response = processLCommand();
         freeCommands(commands);
 
-        printf("%s\n", response);
+        
 
         pthread_mutex_unlock(&mutex);
         return response;
@@ -606,7 +612,6 @@ char *processRequest (char *request) {
         if (checkValidRule(newRule) == false) {
             free(newRule);
             freeCommands(commands);
-            printf("Invalid Rule\n");
 
             pthread_mutex_unlock(&mutex);
             return strdup("Invalid rule");
@@ -616,7 +621,7 @@ char *processRequest (char *request) {
 
         free(newRule);
         freeCommands(commands);
-        printf("%s\n", response);
+        
 
         pthread_mutex_unlock(&mutex);
         return response;
@@ -625,10 +630,7 @@ char *processRequest (char *request) {
         // with "F" i want to delete all rules
 
         //RESULTS
-        printf("\nClearing all rules...\n");
         char *response = processFCommand();
-
-        printf("%s\n", response);
 
         freeCommands(commands);
 
